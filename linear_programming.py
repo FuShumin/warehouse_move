@@ -1,4 +1,4 @@
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus,LpStatusOptimal
+from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOptimal
 import numpy as np
 
 
@@ -54,20 +54,20 @@ def optimize_stock_distribution(current_stock, max_stock_per_warehouse, min_safe
     return actions
 
 
+# 根据库存占比百分比进行优化
 def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock,
                                            df_special_rules_index):
     n_warehouses, m_goods = current_stock.shape
 
-    # Initialize the optimization problem
+    # 初始化问题
     prob = LpProblem("Stock_Distribution_Modified", LpMinimize)
 
-    # Create variables
     transfer_vars = LpVariable.dicts("Transfer",
                                      ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
                                       range(m_goods)),
                                      lowBound=0, cat='Integer')
 
-    # Objective function: Minimize the standard deviation of stock percentage for each good across all warehouses
+    # 目标函数: 在满足约束的前提下，最小化各牌号在各个仓库之间的占比的标准差
     for k in range(m_goods):
         stock_percentage_levels = [
             (current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
@@ -78,25 +78,25 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
             [(stock_percentage - mean_percentage) for stock_percentage in stock_percentage_levels]) / n_warehouses
         prob += std_dev_percentage  # Add to objective function
 
-    # Constraints remain the same as before
-
-    # Constraint 1: Cannot exceed maximum warehouse capacity
+    # 约束 1: 不能超过最大库存
     for i in range(n_warehouses):
         prob += lpSum([current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
                        lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) for k in range(m_goods)]) <= \
                 max_stock_per_warehouse[i]
 
-    # Constraint 2: Cannot transfer more than current stock
+    # 约束 2: 转移量大于当前库存
     for i in range(n_warehouses):
         for k in range(m_goods):
             prob += lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) <= current_stock[i, k]
 
-    # Constraint 3: Stock must be above safety stock
+    # 约束 3: 当前库存大于安全库存
     for i in range(n_warehouses):
         for k in range(m_goods):
             prob += current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) + \
                     lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) >= min_safety_stock[i, k]
 
+    # 突破特殊规则的软约束，添加惩罚
+    penalty_factor = -1000
     # 添加特殊规则约束
     for index, row in df_special_rules_index.iterrows():
         item_index = row['item_index']
@@ -129,7 +129,7 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
             # if LpStatus[prob.status] == "Infeasible":
             #     print("The problem is infeasible.")
             #     return None
-    # Extract the actions
+    # 提取方案
     actions = []
     for i in range(n_warehouses):
         for j in range(n_warehouses):
@@ -141,7 +141,6 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
 
 
 def calculate_stock_percentage_change(actions, current_stock, max_stock_per_warehouse):
-    # 复制一份 current_stock 以避免直接修改
     current_stock_copy = np.copy(current_stock)
 
     # 计算初始库存百分比
