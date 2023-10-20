@@ -98,15 +98,16 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
     # 突破特殊规则的软约束，添加惩罚
     penalty_factor = -1000
     # 添加特殊规则约束
-    for index, row in df_special_rules_index.iterrows():
-        item_index = row['item_index']
-        start_index = row['start_index']
-        end_index = row['end_index']
+    if df_special_rules_index is not None and not df_special_rules_index.empty:
+        for index, row in df_special_rules_index.iterrows():
+            item_index = row['item_index']
+            start_index = row['start_index']
+            end_index = row['end_index']
 
-        for j in range(n_warehouses):
-            if j != end_index:
-                prob += transfer_vars[(start_index, j, item_index)] == 0
-
+            for j in range(n_warehouses):
+                if j != end_index:
+                    # prob += transfer_vars[(start_index, j, item_index)] == 0
+                    prob += penalty_factor * transfer_vars[(start_index, j, item_index)]
     # 尝试求解问题
     prob.solve()
     # 检查解的状态
@@ -126,9 +127,7 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
 
             # 重新求解问题
             prob.solve()
-            # if LpStatus[prob.status] == "Infeasible":
-            #     print("The problem is infeasible.")
-            #     return None
+
     # 提取方案
     actions = []
     for i in range(n_warehouses):

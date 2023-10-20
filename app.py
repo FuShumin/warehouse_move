@@ -11,33 +11,64 @@ app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
 
+def get_database_connection():
+    """Establish and return a database connection."""
+    return pymysql.connect(host='10.1.20.196', port=3306, user='root', password='nti56.com', database='lcs')
+
+
+def execute_query(cursor, query, params=None):
+    """Execute a SQL query and return the fetched data as a DataFrame."""
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    fields = [i[0] for i in cursor.description]
+    return pd.DataFrame(rows, columns=fields)
+
+
 def fetch_and_calculate(client_id):
     client_id = client_id
     # 连接数据库
-    # todo 特殊规则
-    # 执行SQL查询，获取所有特殊规则
-    conn = pymysql.connect(host='10.1.20.196', port=3306, user='root', password='nti56.com', database='clmis_product')
-    cursor = conn.cursor()
-    query = ("SELECT material_code AS item_code, start_code, end_code FROM product_algorithmic_rule WHERE deleted = 0 "
-             "AND client_id = %s;")
-    cursor.execute(query, (client_id,))
-    rows = cursor.fetchall()
 
-    fields = [i[0] for i in cursor.description]
-    df_special_rules = pd.DataFrame(rows, columns=fields)
+    # 执行SQL查询
+    with get_database_connection() as conn:
+        with conn.cursor() as cursor:
+            query = ("SELECT material_code AS item_code, start_code, end_code FROM product_algorithmic_rule WHERE "
+                     "deleted = 0 "
+                     "AND client_id = %s;")
+            df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
 
-    cursor.close()
-    conn.close()
-    conn = pymysql.connect(host='10.1.20.196', port=3306, user='root', password='nti56.com', database='clmis_stock')
-    cursor = conn.cursor()
-    # todo 当前库存
-    # 执行SQL查询，获取所有数据
-    query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s;"
-    cursor.execute(query, (client_id,))
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_current_stock = pd.DataFrame(rows, columns=fields)
+            query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s;"
+            df_current_stock = execute_query(cursor, query, (client_id,))  # 当前库存
 
+            query = "SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s;"
+            df_max_stock = execute_query(cursor, query, (client_id,))  # 最大库存
+
+            query = ("SELECT warehouse_code, warehouse_name, item_code, item_name, onload_stock FROM stock "
+                     "WHERE onload_stock > 0 AND client_id = %s;")
+            df_onload_stock = execute_query(cursor, query, (client_id,))  # 在途库存
+
+            query = "SELECT warehouse_code, item_code, min_stock FROM stock_safe_config WHERE client_id = %s;"
+            df_min_safe = execute_query(cursor, query, (client_id,))  # 牌号最小安全库存
+
+            query = """
+                SELECT
+                    material_info.code, material_info_attr.attr_value, material_info_attr.attr_id
+                FROM
+                    material_info
+                JOIN material_info_attr ON material_info.id = material_info_attr.material_id
+                JOIN material_attr ON material_info_attr.attr_id = material_attr.id
+                WHERE
+                    material_attr.name = '成品' AND material_info.client_id = %s;
+            """
+            df_item_attributes = execute_query(cursor, query, (client_id,))  # 成品属性
+
+            query = "SELECT item_code, item_name FROM stock_safe_config WHERE client_id = %s;"
+            df_item_info = execute_query(cursor, query, (client_id,))  # 物品信息
+
+            # 从 warehouse_info 表中找到 code（即 warehouse_code）对应的 name
+            query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s;"
+            df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
+
+    # SECTION 当前库存处理
     # 去除包含 None 值的行
     df_current_stock = df_current_stock.dropna(subset=['warehouse_code', 'item_code'])
     # 步骤 1: 确定唯一的仓库和商品代码
@@ -59,25 +90,12 @@ def fetch_and_calculate(client_id):
         k = item_to_index[item_code]
         current_stock[i, k] = row['available_stock']
 
-    # todo 最大库容
-    query = "SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s;"
-    cursor.execute(query, (client_id,))
-
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_max_stock = pd.DataFrame(rows, columns=fields)
+    # SECTION 最大库容处理
     # 将 'code' 列重命名为 'warehouse_code' 以与之前的 DataFrame 保持一致
     df_max_stock.rename(columns={'code': 'warehouse_code'}, inplace=True)
     # 将 'safe_stock' 列转换为数字
     df_max_stock['safe_stock'] = pd.to_numeric(df_max_stock['safe_stock'], errors='coerce')
 
-    query = ("SELECT warehouse_code, warehouse_name, item_code, item_name, onload_stock FROM stock "
-             "WHERE onload_stock > 0 AND client_id = %s;")
-    cursor.execute(query, (client_id,))
-
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_onload_stock = pd.DataFrame(rows, columns=fields)
     df_onload_stock['onload_stock'] = pd.to_numeric(df_onload_stock['onload_stock'], errors='coerce')
     # 将在途库存转换为字典形式，以便更容易地访问
     onload_stock_dict = df_onload_stock.set_index('warehouse_code').to_dict()['onload_stock']
@@ -97,14 +115,10 @@ def fetch_and_calculate(client_id):
 
     # 找出所有仓库和对应的最大库存
     max_stock_per_warehouse = df_max_stock[df_max_stock['warehouse_code'].isin(unique_warehouses)]['safe_stock'].values
+    small_value = 1e-9
+    max_stock_per_warehouse = np.where(max_stock_per_warehouse == 0, small_value, max_stock_per_warehouse)
 
-    # todo 最小安全库存
-    query = "SELECT warehouse_code, item_code, min_stock FROM stock_safe_config WHERE client_id = %s;"
-    cursor.execute(query, (client_id,))
-
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_min_safe = pd.DataFrame(rows, columns=fields)
+    # SECTION 最小安全库存处理
     # 确保 'min_stock' 列是数字格式
     df_min_safe['min_stock'] = pd.to_numeric(df_min_safe['min_stock'], errors='coerce')
     # 创建一个 NumPy 数组存放最小安全库存，维度与 current_stock 相同
@@ -175,7 +189,7 @@ def fetch_and_calculate(client_id):
     # 将列表转换为DataFrame
     df_special_rules_index = pd.DataFrame(special_rules_index_list)
 
-    # todo 调用线性规划算法 获取actions
+    # SECTION 调用线性规划算法 获取actions
     try:
         actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock,
                                                          df_special_rules_index)
@@ -192,24 +206,8 @@ def fetch_and_calculate(client_id):
     # 将整合后的移库方案转换为列表格式
     consolidated_actions_list = [(i, j, k, qty) for (i, j, k), qty in consolidated_actions.items()]
 
-    # 从 stock_safe_config 表中找到 item_code 对应的 item_name
-    query = "SELECT item_code, item_name FROM stock_safe_config WHERE client_id = %s;"
-    cursor.execute(query, (client_id,))
-
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_item_info = pd.DataFrame(rows, columns=fields)
-
     # 将 item_code 映射到 item_name
     item_code_to_name = {row['item_code']: row['item_name'] for _, row in df_item_info.iterrows()}
-
-    # 从 warehouse_info 表中找到 code（即 warehouse_code）对应的 name
-    query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s;"
-    cursor.execute(query, (client_id,))
-
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_warehouse_info = pd.DataFrame(rows, columns=fields)
 
     # 将 warehouse_code 映射到 name
     warehouse_code_to_name = {row['code']: row['name'] for _, row in df_warehouse_info.iterrows()}
@@ -231,31 +229,7 @@ def fetch_and_calculate(client_id):
     readable_result = map_index_to_readable_result(result, warehouse_to_index, item_to_index, warehouse_code_to_name,
                                                    item_code_to_name)
 
-    # todo 获取成品属性
-    # 执行SQL查询，获取所有成品属性
-    cursor.close()
-    conn.close()
-    conn = pymysql.connect(host='10.1.20.196', port=3306, user='root', password='nti56.com', database='clmis_material')
-    cursor = conn.cursor()
-
-    query = """
-        SELECT
-            material_info.code, material_info_attr.attr_value, material_info_attr.attr_id
-        FROM
-            material_info
-        JOIN material_info_attr ON material_info.id = material_info_attr.material_id
-        JOIN material_attr ON material_info_attr.attr_id = material_attr.id
-        WHERE
-            material_attr.name = '成品' AND material_info.client_id = %s;
-    """
-
-    cursor.execute(query, (client_id,))
-
-    rows = cursor.fetchall()
-    fields = [i[0] for i in cursor.description]
-    df_item_attributes = pd.DataFrame(rows, columns=fields)
-    cursor.close()
-    conn.close()
+    # SECTION 成品属性处理
     # 将 item_code 映射到成品属性和属性 ID
     item_code_to_attribute = {
         row['code']: {'attr_value': row['attr_value'], 'attr_id': row['attr_id']}
