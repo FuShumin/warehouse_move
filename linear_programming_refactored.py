@@ -56,13 +56,12 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
             allowed_targets[start_index] = set()
         allowed_targets[start_index].add(end_index)
 
-    penalty_factor = -1000
     # Add constraints based on allowed targets
     for start_index, targets in allowed_targets.items():
         for item_index in range(len(transfer_vars[0][0])):
             for j in range(n_warehouses):
                 if j not in targets:
-                    prob += penalty_factor * transfer_vars[(start_index, j, item_index)]
+                    prob += transfer_vars[(start_index, j, item_index)] == 0
 
 
 def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):

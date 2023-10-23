@@ -2,10 +2,6 @@ from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOpt
 import numpy as np
 
 
-# 根据库存占比百分比进行优化
-from pulp import LpProblem, LpMinimize, LpVariable, lpSum, LpStatus
-
-
 def add_objective_function(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars):
     """
     Add the objective function to the linear programming problem.
@@ -50,24 +46,14 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
     """
     Add special rules as constraints to the linear programming problem.
     """
-    # Create a dictionary to hold allowed target warehouses for each source warehouse
-    allowed_targets = {}
     for index, row in df_special_rules_index.iterrows():
+
         item_index = row['item_index']
         start_index = row['start_index']
         end_index = row['end_index']
-
-        if start_index not in allowed_targets:
-            allowed_targets[start_index] = set()
-        allowed_targets[start_index].add(end_index)
-
-    penalty_factor = -1000
-    # Add constraints based on allowed targets
-    for start_index, targets in allowed_targets.items():
-        for item_index in range(len(transfer_vars[0][0])):
-            for j in range(n_warehouses):
-                if j not in targets:
-                    prob += penalty_factor * transfer_vars[(start_index, j, item_index)]
+        for j in range(n_warehouses):
+            if j != end_index:
+                prob += transfer_vars[(start_index, j, item_index)] == 0
 
 
 def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
@@ -230,20 +216,3 @@ def map_index_to_readable_result(result, warehouse_to_index, item_to_index, ware
         }
     return readable_result
 
-
-if __name__ == '__main__':
-    # Test the function
-    n_warehouses = 10  # Use a smaller number for demonstration
-    m_goods = 50  # Use a smaller number for demonstration
-    current_stock = np.random.randint(1000, 5000, size=(n_warehouses, m_goods))
-    max_stock_per_warehouse = np.random.randint(10000, 20000, size=n_warehouses)
-    min_safety_stock = np.full((10, 25), 100)
-
-    actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock)
-    print(actions)
-    # %%
-    # Additional test cases
-    current_stock_test = current_stock[:, :-2]
-    max_stock_per_warehouse_test = current_stock_test[:, -1] - current_stock_test[:, -2]
-    result = calculate_stock_percentage_change(actions, current_stock, max_stock_per_warehouse)
-    report = generate_report(actions, current_stock, max_stock_per_warehouse)

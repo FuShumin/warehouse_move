@@ -105,6 +105,7 @@ print("action_space:", action_space)
 
 # %%
 import numpy as np
+
 n_warehouses = np.random.randint(2, 10)
 m_goods = np.random.randint(2, 25)
 
@@ -172,3 +173,35 @@ current_stock = np.hstack((current_stock, max_stock_per_warehouse_reshaped))
 # normalized_last_two = current_stock[:, -2:] / np.array([1000, 2000])
 # normalized_obs = np.hstack([normalized_front, normalized_last_two])
 # flattened_obs = normalized_obs.flatten()
+
+# %% 线性规划算法测试
+# path: /mnt/data/generate_test_data.py
+
+import numpy as np
+import pandas as pd
+
+
+def generate_test_data(n_warehouses=3, m_goods=2, seed=42):
+    """
+    Generate synthetic data for testing the stock optimization algorithm.
+    """
+    np.random.seed(seed)
+
+    # Generate current stock levels for each warehouse and good
+    current_stock = np.random.randint(100, 500, size=(n_warehouses, m_goods))
+
+    # Generate maximum stock capacity for each warehouse
+    max_stock_per_warehouse = np.random.randint(500, 1000, size=n_warehouses)
+
+    # Generate minimum safety stock levels for each warehouse and good
+    min_safety_stock = np.random.randint(50, 100, size=(n_warehouses, m_goods))
+
+    # Create a DataFrame for special routing rules
+    df_special_rules_index = pd.DataFrame({'item_index': [0],
+                                           'start_index': [2],
+                                           'end_index': [0]})
+
+    return current_stock, max_stock_per_warehouse, min_safety_stock, df_special_rules_index
+
+
+current_stock, max_stock_per_warehouse, min_safety_stock, df_special_rules_index = generate_test_data()
