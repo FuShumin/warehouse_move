@@ -53,7 +53,8 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
         end_index = row['end_index']
         for j in range(n_warehouses):
             if j != end_index:
-                prob += transfer_vars[(start_index, j, item_index)] == 0
+                if transfer_vars.get((start_index, j, item_index)) is not None:
+                    prob += transfer_vars[(start_index, j, item_index)] == 0
 
 
 def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
@@ -70,9 +71,10 @@ def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
             for j in range(n_warehouses):
                 if j != end_index:
                     # Check and remove the special rule constraint
-                    constraint_name = f"{transfer_vars[(start_index, j, item_index)].name}"
-                    if constraint_name in prob.constraints:
-                        del prob.constraints[constraint_name]
+                    if transfer_vars.get((start_index, j, item_index)) is not None:
+                        constraint_name = f"{transfer_vars[(start_index, j, item_index)].name}"
+                        if constraint_name in prob.constraints:
+                            del prob.constraints[constraint_name]
         # Solve the problem again
         prob.solve()
 
