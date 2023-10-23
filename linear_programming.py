@@ -2,72 +2,15 @@ from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOpt
 import numpy as np
 
 
-def optimize_stock_distribution(current_stock, max_stock_per_warehouse, min_safety_stock):
-    n_warehouses, m_goods = current_stock.shape
-
-    # Initialize the optimization problem
-    prob = LpProblem("Stock_Distribution", LpMinimize)
-
-    # Create variables
-    transfer_vars = LpVariable.dicts("Transfer",
-                                     ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
-                                      range(m_goods)),
-                                     lowBound=0, cat='Integer')
-
-    # Objective function: Minimize the standard deviation of stock levels for each good across all warehouses
-    for k in range(m_goods):
-        stock_levels = [current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
-                        lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) for i in range(n_warehouses)]
-
-        mean_stock = lpSum(stock_levels) / n_warehouses
-        std_dev = lpSum([(stock_level - mean_stock) for stock_level in stock_levels]) / n_warehouses
-        prob += std_dev  # Add to objective function
-
-    # Constraint 1: Cannot exceed maximum warehouse capacity
-    for i in range(n_warehouses):
-        prob += lpSum([current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
-                       lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) for k in range(m_goods)]) <= \
-                max_stock_per_warehouse[i]
-
-    # Constraint 2: Cannot transfer more than current stock
-    for i in range(n_warehouses):
-        for k in range(m_goods):
-            prob += lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) <= current_stock[i, k]
-
-    # Constraint 3: Stock must be above safety stock
-    for i in range(n_warehouses):
-        for k in range(m_goods):
-            prob += current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) + \
-                    lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) >= min_safety_stock[i, k]
-
-    # Solve the problem
-    prob.solve()
-
-    # Extract the actions
-    actions = []
-    for i in range(n_warehouses):
-        for j in range(n_warehouses):
-            for k in range(m_goods):
-                if transfer_vars[(i, j, k)].varValue > 0:
-                    actions.append((i, j, k, transfer_vars[(i, j, k)].varValue))
-
-    return actions
-
-
 # 根据库存占比百分比进行优化
-def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock,
-                                           df_special_rules_index):
-    n_warehouses, m_goods = current_stock.shape
+from pulp import LpProblem, LpMinimize, LpVariable, lpSum, LpStatus
 
-    # 初始化问题
-    prob = LpProblem("Stock_Distribution_Modified", LpMinimize)
 
-    transfer_vars = LpVariable.dicts("Transfer",
-                                     ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
-                                      range(m_goods)),
-                                     lowBound=0, cat='Integer')
-
-    # 目标函数: 在满足约束的前提下，最小化各牌号在各个仓库之间的占比的标准差
+def add_objective_function(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars):
+    """
+    Add the objective function to the linear programming problem.
+    Objective is to minimize the standard deviation of stock percentage levels across different warehouses for each good.
+    """
     for k in range(m_goods):
         stock_percentage_levels = [
             (current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
@@ -78,64 +21,148 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
             [(stock_percentage - mean_percentage) for stock_percentage in stock_percentage_levels]) / n_warehouses
         prob += std_dev_percentage  # Add to objective function
 
-    # 约束 1: 不能超过最大库存
+
+def add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods,
+                    transfer_vars):
+    """
+    Add constraints to the linear programming problem.
+    1. Max stock per warehouse
+    2. Transferred quantity should be less than current stock
+    3. Current stock should be more than minimum safety stock
+    """
+    # Constraint 1: Max stock per warehouse
     for i in range(n_warehouses):
         prob += lpSum([current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
                        lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) for k in range(m_goods)]) <= \
                 max_stock_per_warehouse[i]
-
-    # 约束 2: 转移量大于当前库存
+    # Constraint 2: Transferred quantity should be less than current stock
     for i in range(n_warehouses):
         for k in range(m_goods):
             prob += lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) <= current_stock[i, k]
-
-    # 约束 3: 当前库存大于安全库存
+    # Constraint 3: Current stock should be more than minimum safety stock
     for i in range(n_warehouses):
         for k in range(m_goods):
             prob += current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) + \
                     lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) >= min_safety_stock[i, k]
 
-    # 突破特殊规则的软约束，添加惩罚
+
+def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars):
+    """
+    Add special rules as constraints to the linear programming problem.
+    """
+    # Create a dictionary to hold allowed target warehouses for each source warehouse
+    allowed_targets = {}
+    for index, row in df_special_rules_index.iterrows():
+        item_index = row['item_index']
+        start_index = row['start_index']
+        end_index = row['end_index']
+
+        if start_index not in allowed_targets:
+            allowed_targets[start_index] = set()
+        allowed_targets[start_index].add(end_index)
+
     penalty_factor = -1000
-    # 添加特殊规则约束
-    if df_special_rules_index is not None and not df_special_rules_index.empty:
-        for index, row in df_special_rules_index.iterrows():
-            item_index = row['item_index']
-            start_index = row['start_index']
-            end_index = row['end_index']
-
+    # Add constraints based on allowed targets
+    for start_index, targets in allowed_targets.items():
+        for item_index in range(len(transfer_vars[0][0])):
             for j in range(n_warehouses):
-                if j != end_index:
-                    # prob += transfer_vars[(start_index, j, item_index)] == 0
+                if j not in targets:
                     prob += penalty_factor * transfer_vars[(start_index, j, item_index)]
-    # 尝试求解问题
+
+
+def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
+    """
+    Solve the linear programming problem and handle infeasibility by removing special rule constraints if needed.
+    """
     prob.solve()
-    # 检查解的状态
+    # Handle infeasible cases
     if LpStatus[prob.status] == "Infeasible":
-        # 问题无解，去掉特殊规则并重新求解
         for index, row in df_special_rules_index.iterrows():
             item_index = row['item_index']
             start_index = row['start_index']
             end_index = row['end_index']
-
             for j in range(n_warehouses):
                 if j != end_index:
-                    # 检查并删除特殊规则约束
+                    # Check and remove the special rule constraint
                     constraint_name = f"{transfer_vars[(start_index, j, item_index)].name}"
                     if constraint_name in prob.constraints:
                         del prob.constraints[constraint_name]
+        # Solve the problem again
+        prob.solve()
 
-            # 重新求解问题
-            prob.solve()
 
-    # 提取方案
+def extract_solution(prob, n_warehouses, m_goods, transfer_vars):
+    """
+    Extract the optimal solution from the solved linear programming problem.
+    """
     actions = []
     for i in range(n_warehouses):
         for j in range(n_warehouses):
             for k in range(m_goods):
                 if transfer_vars[(i, j, k)].varValue > 0:
                     actions.append((i, j, k, transfer_vars[(i, j, k)].varValue))
+    return actions
 
+
+def check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods):
+    """
+    Check for potential issues that might make the problem infeasible or cause errors.
+    """
+    errors = []
+
+    # Check if minimum safety stock exceeds maximum warehouse capacity
+    for i in range(n_warehouses):
+        for k in range(m_goods):
+            if min_safety_stock[i, k] > max_stock_per_warehouse[i]:
+                errors.append(
+                    f"Minimum safety stock for warehouse {i} and good {k} exceeds maximum warehouse capacity.")
+    # Check if any maximum stock capacity is negative
+    if any(stock < 0 for stock in max_stock_per_warehouse):
+        errors.append("Negative values found in maximum stock capacities.")
+
+    # # Check if any current stock is negative
+    # if any(stock < 0 for stock in current_stock.flatten()):
+    #     errors.append("Negative values found in current stock levels.")
+
+    # Check if any minimum safety stock is negative
+    if any(stock < 0 for stock in min_safety_stock.flatten()):
+        errors.append("Negative values found in minimum safety stock levels.")
+
+    # Check if the number of warehouses or goods is zero
+    if n_warehouses == 0 or m_goods == 0:
+        errors.append("Number of warehouses or goods cannot be zero.")
+    # TODO: Add more error checks as needed
+
+    return errors
+
+
+def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock,
+                                           df_special_rules_index):
+    """
+    Main function to optimize the stock distribution among different warehouses.
+    """
+    n_warehouses, m_goods = current_stock.shape
+
+    # Check for potential errors
+    errors = check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods)
+    if errors:
+        return f"Errors found: {errors}"
+
+    # Initialize the linear programming problem
+    prob = LpProblem("Stock_Distribution_Modified", LpMinimize)
+
+    transfer_vars = LpVariable.dicts("Transfer",
+                                     ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
+                                      range(m_goods)),
+                                     lowBound=0, cat='Integer')
+
+    add_objective_function(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars)
+    add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods,
+                    transfer_vars)
+    add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
+    solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars)
+
+    actions = extract_solution(prob, n_warehouses, m_goods, transfer_vars)
     return actions
 
 
@@ -212,7 +239,7 @@ if __name__ == '__main__':
     max_stock_per_warehouse = np.random.randint(10000, 20000, size=n_warehouses)
     min_safety_stock = np.full((10, 25), 100)
 
-    actions = optimize_stock_distribution(current_stock, max_stock_per_warehouse, min_safety_stock)
+    actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock)
     print(actions)
     # %%
     # Additional test cases

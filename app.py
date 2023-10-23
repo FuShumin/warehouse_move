@@ -2,7 +2,7 @@ import pymysql
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-from linear_programming import optimize_stock_distribution, optimize_stock_distribution_percentage, \
+from linear_programming import optimize_stock_distribution_percentage, \
     calculate_stock_percentage_change, map_index_to_readable_result
 from datetime import datetime
 from flask import Flask, jsonify, request
