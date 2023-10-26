@@ -39,7 +39,8 @@ def fetch_and_calculate(client_id):
             query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s;"
             df_current_stock = execute_query(cursor, query, (client_id,))  # 当前库存
 
-            query = "SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s;"
+            query = ("SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s AND is_delete=0 AND "
+                     "safe_stock IS NOT NULL;")
             df_max_stock = execute_query(cursor, query, (client_id,))  # 最大库存
 
             query = ("SELECT warehouse_code, warehouse_name, item_code, item_name, onload_stock FROM stock "
@@ -57,7 +58,7 @@ def fetch_and_calculate(client_id):
                 JOIN material_info_attr ON material_info.id = material_info_attr.material_id
                 JOIN material_attr ON material_info_attr.attr_id = material_attr.id
                 WHERE
-                    material_attr.name = '成品属性' AND material_info.client_id = %s;
+                    material_attr.name = '卷烟类型' AND material_info.client_id = %s;
             """
             df_item_attributes = execute_query(cursor, query, (client_id,))  # 成品属性
 
@@ -275,6 +276,11 @@ def fetch_and_calculate(client_id):
         item_attribute_info = item_code_attribute_map.get(item_code,
                                                           {'attr_value': '未知成品属性', 'attr_id': '未知ID'})
         item_attribute = item_attribute_info['attr_value']
+        if item_attribute == '1':
+            item_attribute = '在制烟'
+        elif item_attribute == '0':
+            item_attribute = '成品烟'
+
         item_attribute_id = item_attribute_info['attr_id']
 
         # 将所有信息整理成一个列表

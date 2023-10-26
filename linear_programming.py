@@ -34,7 +34,9 @@ def add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_sto
     # Constraint 2: Transferred quantity should be less than current stock
     for i in range(n_warehouses):
         for k in range(m_goods):
-            prob += lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) <= current_stock[i, k]
+            max_transfer = max(0, current_stock[i, k])
+            prob += lpSum([transfer_vars.get((i, j, k), 0) for j in range(n_warehouses)]) <= max_transfer
+
     # Constraint 3: Current stock should be more than minimum safety stock
     for i in range(n_warehouses):
         for k in range(m_goods):
@@ -68,22 +70,22 @@ def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
     """
     prob.solve()
     # Handle infeasible cases
-    if LpStatus[prob.status] == "Infeasible":
-        for index, row in df_special_rules_index.iterrows():
-            item_index = row['item_index']
-            start_index = row['start_index']
-            end_index = row['end_index']
-            for j in range(n_warehouses):
-                if j != end_index:
-                    # Check and remove the special rule constraint
-                    if transfer_vars.get((start_index, j, item_index)) is not None:
-                        constraint_name = f"{transfer_vars[(start_index, j, item_index)].name}"
-                        if constraint_name in prob.constraints:
-                            del prob.constraints[constraint_name]
+    # if LpStatus[prob.status] == "Infeasible":
+    #     for index, row in df_special_rules_index.iterrows():
+    #         item_index = row['item_index']
+    #         start_index = row['start_index']
+    #         end_index = row['end_index']
+    #         for j in range(n_warehouses):
+    #             if j != end_index:
+    #                 # Check and remove the special rule constraint
+    #                 if transfer_vars.get((start_index, j, item_index)) is not None:
+    #                     constraint_name = f"{transfer_vars[(start_index, j, item_index)].name}"
+    #                     if constraint_name in prob.constraints:
+    #                         del prob.constraints[constraint_name]
         # Solve the problem again
-        prob.solve()
-        if LpStatus[prob.status] == "Infeasible":
-            return f"Errors found: {LpStatus[prob.status]}"
+        # prob.solve()
+    if LpStatus[prob.status] == "Infeasible":
+        return f"Errors found: {LpStatus[prob.status]}"
 
 
 def extract_solution(prob, n_warehouses, m_goods, transfer_vars):
@@ -94,7 +96,7 @@ def extract_solution(prob, n_warehouses, m_goods, transfer_vars):
     for i in range(n_warehouses):
         for j in range(n_warehouses):
             for k in range(m_goods):
-                if transfer_vars[(i, j, k)].varValue > 0:
+                if transfer_vars[(i, j, k)].varValue > 1e-8:
                     actions.append((i, j, k, transfer_vars[(i, j, k)].varValue))
     return actions
 
@@ -152,8 +154,12 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
                                      lowBound=0, cat='Integer')
 
     add_objective_function(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars)
+    # debug_info = debug_objective_function(prob)
+    # print(debug_info)
     add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods,
                     transfer_vars)
+    # debug_info = debug_constraints(prob, current_stock, n_warehouses, m_goods, transfer_vars)
+    # print(debug_info)
     add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
     solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars)
 
@@ -225,3 +231,20 @@ def map_index_to_readable_result(result, warehouse_to_index, item_to_index, ware
         }
     return readable_result
 
+def debug_constraints(prob, current_stock, n_warehouses, m_goods, transfer_vars):
+    """
+    Debug function to print and check constraints related to stock levels.
+    """
+    debug_info = []
+    for i in range(n_warehouses):
+        for k in range(m_goods):
+            constraint_expr = lpSum([transfer_vars.get((i, j, k), 0) for j in range(n_warehouses)])
+            debug_info.append(f"For warehouse {i}, good {k}: Constraint should be Transfer Sum <= {current_stock[i, k]}")
+            debug_info.append(f"Constraint expression: {constraint_expr}")
+    return debug_info
+
+def debug_objective_function(prob):
+    """
+    Debug function to print the current objective function.
+    """
+    return f"Current Objective Function: {prob.objective}"
