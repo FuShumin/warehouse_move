@@ -8,7 +8,7 @@ import os
 
 # 加载 YOLO 模型
 # model = YOLO('./runs/detect/train6/weights/best.pt')
-model = YOLO('/Users/apple/Downloads/train6/weights/best.pt')
+model = YOLO('/Users/apple/Downloads/train8/weights/best.pt')
 label_info = {
     0: '双喜(硬经典)',
     1: '双喜(硬经典1906)',
@@ -20,7 +20,7 @@ label_info = {
 
 def predict(inp):
     # 使用 YOLO 进行预测，并保存结果
-    results = model(inp, save=True)
+    results = model(inp, save=True, conf=0.5)
 
     # 获取保存目录
     save_dir = results[0].save_dir

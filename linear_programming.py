@@ -53,8 +53,13 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
         end_index = row['end_index']
         for j in range(n_warehouses):
             if j != end_index:
-                if transfer_vars.get((start_index, j, item_index)) is not None:
-                    prob += transfer_vars[(start_index, j, item_index)] == 0
+                # List comprehension to collect all valid (start_index, j, item_index) tuples
+                valid_keys = [(start_index, j, item_index) for j in range(n_warehouses) if
+                              j != end_index and transfer_vars.get((start_index, j, item_index)) is not None]
+
+                # Update the problem constraints for all valid keys
+                for key in valid_keys:
+                    prob += transfer_vars[key] == 0
 
 
 def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
@@ -77,6 +82,8 @@ def solve_problem(prob, df_special_rules_index, n_warehouses, transfer_vars):
                             del prob.constraints[constraint_name]
         # Solve the problem again
         prob.solve()
+        if LpStatus[prob.status] == "Infeasible":
+            return f"Errors found: {LpStatus[prob.status]}"
 
 
 def extract_solution(prob, n_warehouses, m_goods, transfer_vars):

@@ -57,7 +57,7 @@ def fetch_and_calculate(client_id):
                 JOIN material_info_attr ON material_info.id = material_info_attr.material_id
                 JOIN material_attr ON material_info_attr.attr_id = material_attr.id
                 WHERE
-                    material_attr.name = '成品' AND material_info.client_id = %s;
+                    material_attr.name = '成品属性' AND material_info.client_id = %s;
             """
             df_item_attributes = execute_query(cursor, query, (client_id,))  # 成品属性
 
@@ -69,10 +69,11 @@ def fetch_and_calculate(client_id):
             df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
 
     # SECTION 当前库存处理
+    df_max_stock.rename(columns={'code': 'warehouse_code'}, inplace=True)
     # 去除包含 None 值的行
     df_current_stock = df_current_stock.dropna(subset=['warehouse_code', 'item_code'])
     # 步骤 1: 确定唯一的仓库和商品代码
-    unique_warehouses = df_current_stock['warehouse_code'].unique()
+    unique_warehouses = df_max_stock['warehouse_code'].unique()
     unique_items = df_current_stock['item_code'].unique()
     n_warehouses = len(unique_warehouses)
     m_goods = len(unique_items)
@@ -85,14 +86,12 @@ def fetch_and_calculate(client_id):
     for _, row in df_current_stock.iterrows():
         warehouse_code = row['warehouse_code']
         item_code = row['item_code']
-
-        i = warehouse_to_index[warehouse_code]
-        k = item_to_index[item_code]
-        current_stock[i, k] = row['available_stock']
+        if warehouse_code in warehouse_to_index and item_code in item_to_index:
+            i = warehouse_to_index[warehouse_code]
+            j = item_to_index[item_code]
+            current_stock[i, j] = row['available_stock']
 
     # SECTION 最大库容处理
-    # 将 'code' 列重命名为 'warehouse_code' 以与之前的 DataFrame 保持一致
-    df_max_stock.rename(columns={'code': 'warehouse_code'}, inplace=True)
     # 将 'safe_stock' 列转换为数字
     df_max_stock['safe_stock'] = pd.to_numeric(df_max_stock['safe_stock'], errors='coerce')
 
@@ -164,6 +163,7 @@ def fetch_and_calculate(client_id):
 
         min_safety_stock[i, k] = row['min_stock']
 
+    # SECTION: 特殊规则
     # 初始化一个空列表用于存储转换后的规则
     special_rules_index_list = []
 
@@ -191,8 +191,9 @@ def fetch_and_calculate(client_id):
 
     # SECTION 调用线性规划算法 获取actions
     try:
-        actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock,
-                                                         df_special_rules_index)
+        actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse,
+                                                                 min_safety_stock,
+                                                                 df_special_rules_index)
     except Exception as e:
         print(f"Error: {e}")
         actions = None  # 或者你可以设置一个其它的默认值
