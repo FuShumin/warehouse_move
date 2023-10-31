@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="f6a6fd99-5391-4d5d-aa8b-a8d984fda0a9" name="10.1.20.196">
+        <fileTransfer rootFolder="/usr/algorithm" accessType="SFTP" host="10.1.20.196" port="22" sshConfigId="a8e849dd-3034-439f-8480-0ebfa320aea8" sshConfig="root@10.1.20.196:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" isUseRsync="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
