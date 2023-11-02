@@ -6,14 +6,24 @@ from linear_programming import optimize_stock_distribution_percentage, \
     calculate_stock_percentage_change, map_index_to_readable_result
 from datetime import datetime
 from flask import Flask, jsonify, request
+import os
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
 
+# def get_database_connection():
+#     """Establish and return a database connection."""
+#     return pymysql.connect(host='10.1.20.196', port=3306, user='root', password='nti56.com', database='lcs')
 def get_database_connection():
     """Establish and return a database connection."""
-    return pymysql.connect(host='10.1.20.196', port=3306, user='root', password='nti56.com', database='lcs')
+    host = os.environ.get('DB_HOST', '10.1.20.196')
+    port = int(os.environ.get('DB_PORT', 3306))
+    user = os.environ.get('DB_USER', 'root')
+    password = os.environ.get('DB_PASSWORD', 'nti56.com')
+    database = os.environ.get('DB_NAME', 'lcs')
+
+    return pymysql.connect(host=host, port=port, user=user, password=password, database=database)
 
 
 def execute_query(cursor, query, params=None):
@@ -42,11 +52,12 @@ def fetch_and_calculate(client_id):
     client_id = client_id
     # client_id = 1691005891402997762
     # 连接数据库
-# %%
+    # %%
     # 执行SQL查询
     with get_database_connection() as conn:
         with conn.cursor() as cursor:
-            query = ("SELECT material_code AS item_code, start_code, end_code FROM lcs_dispatch_cp_algorithmic_rule WHERE "
+            query = ("SELECT material_code AS item_code, start_code, end_code FROM lcs_dispatch_cp_algorithmic_rule "
+                     "WHERE"
                      "deleted = 0 "
                      "AND client_id = %s;")
             df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
@@ -96,11 +107,12 @@ def fetch_and_calculate(client_id):
             """
             df_item_attributes = execute_query(cursor, query, (client_id,))  # 成品属性
 
-            query = "SELECT item_code, item_name FROM stock_safe_config WHERE client_id = %s;"
+            query = ("SELECT code AS item_code, name AS item_name FROM material_info WHERE client_id = %s AND "
+                     "is_delete = 0;")
             df_item_info = execute_query(cursor, query, (client_id,))  # 物品信息
 
             # 从 warehouse_info 表中找到 code（即 warehouse_code）对应的 name
-            query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s;"
+            query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s AND is_delete = 0;"
             df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
 
     # SECTION 当前库存处理
@@ -194,7 +206,6 @@ def fetch_and_calculate(client_id):
     # 创建一个 NumPy 数组存放最大安全库存，维度与 current_stock 相同
     max_safety_stock = np.full((n_warehouses, m_goods), max_stock_per_warehouse[:, np.newaxis], dtype=int)
 
-
     # 填充数组
     for _, row in df_max_safe.iterrows():
         warehouse_code = row['warehouse_code']
@@ -239,7 +250,7 @@ def fetch_and_calculate(client_id):
 
     # 将列表转换为DataFrame
     df_special_rules_index = pd.DataFrame(special_rules_index_list)
-# %%
+    # %%
     # SECTION 调用线性规划算法 获取actions
     try:
         actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse,
@@ -368,7 +379,7 @@ def fetch_and_calculate(client_id):
         }
 
         final_report.append(row_dict)
-# %%
+    # %%
     return final_report
 
 

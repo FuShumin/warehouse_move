@@ -1,10 +1,8 @@
-# your_script.py
-
 import requests
 import json
 
 try:
-    url = "http://127.0.0.1:5000/get_final_report"
+    url = "http://10.1.21.201:35000/get_final_report"
     payload = {
     "params": {
         "pageId": "undefined",

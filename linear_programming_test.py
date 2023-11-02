@@ -7,7 +7,6 @@ def add_objective_function(prob, current_stock, max_stock_per_warehouse, n_wareh
     """
     Add the objective function to the linear programming problem.
     Objective is to minimize the standard deviation of stock percentage levels across different warehouses for each good.
-
     """
     for k in range(m_goods):
         stock_percentage_levels = [
@@ -17,13 +16,14 @@ def add_objective_function(prob, current_stock, max_stock_per_warehouse, n_wareh
         mean_percentage = lpSum(stock_percentage_levels) / n_warehouses
         std_dev_percentage = lpSum(
             [(stock_percentage - mean_percentage) for stock_percentage in stock_percentage_levels]) / n_warehouses
-        prob += std_dev_percentage
 
         priority_term = lpSum([priorities.loc[priorities['index'] == j, 'priority'].iloc[0] *
                                lpSum([transfer_vars[(i, j, k)] for i in range(n_warehouses) for k in range(m_goods)])
                                for j in range(n_warehouses)])
 
-        prob += 0.001 * priority_term
+        # Combine the two terms into a single objective function
+        total_objective = std_dev_percentage + 0.001 * priority_term
+        prob += total_objective
 
 
 def add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock, n_warehouses,
@@ -31,33 +31,25 @@ def add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_sto
                     transfer_vars):
     """
     Add constraints to the linear programming problem.
-    1. Max stock per warehouse
-    2. Transferred quantity should be less than current stock
-    3. Current stock should be more than minimum safety stock
-    4. Current stock should be less than maximum safety stock
+    The new constraints are applied on a per-transfer basis, and current_stock is updated in real-time.
     """
-    # Constraint 1: Max stock per warehouse
     for i in range(n_warehouses):
-        prob += lpSum([current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) +
-                       lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) for k in range(m_goods)]) <= \
-                max_stock_per_warehouse[i]
-    # Constraint 2: Transferred quantity should be less than current stock
-    for i in range(n_warehouses):
-        for k in range(m_goods):
-            max_transfer = max(0, current_stock[i, k])
-            prob += lpSum([transfer_vars.get((i, j, k), 0) for j in range(n_warehouses)]) <= max_transfer
+        for j in range(n_warehouses):
+            for k in range(m_goods):
+                # Update current_stock based on the transfer from i to j for good k
+                updated_stock = current_stock[i, k] - transfer_vars[(i, j, k)] + transfer_vars[(j, i, k)]
 
-    # Constraint 3: Current stock should be more than minimum safety stock
-    for i in range(n_warehouses):
-        for k in range(m_goods):
-            prob += current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) + \
-                    lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) >= min_safety_stock[i, k]
+                # Constraint 1: Ensure stock does not go negative after each transfer
+                prob += updated_stock >= 0
 
-    # Constraint 4: for Maximum Safety Stock
-    for i in range(n_warehouses):
-        for k in range(m_goods):
-            prob += current_stock[i, k] - lpSum([transfer_vars[(i, j, k)] for j in range(n_warehouses)]) + \
-                    lpSum([transfer_vars[(j, i, k)] for j in range(n_warehouses)]) <= max_safety_stock[i, k]
+                # Constraint 2: Ensure stock does not exceed max after each transfer
+                prob += updated_stock <= max_stock_per_warehouse[i]
+
+                # Constraint 3: Ensure stock stays above safety stock after each transfer
+                prob += updated_stock >= min_safety_stock[i, k]
+
+                # Constraint 4: Ensure stock stays below maximum safety stock after each transfer
+                prob += updated_stock <= max_safety_stock[i, k]
 
 
 def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars):
