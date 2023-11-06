@@ -9,7 +9,9 @@ from flask import Flask, jsonify, request
 import os
 
 app = Flask(__name__)
-app.config['JSON_AS_ASCII'] = False
+# app.config['JSON_AS_ASCII'] = False
+# Flask==2.3.0及以上
+app.json.ensure_ascii = False
 
 
 # def get_database_connection():
@@ -56,10 +58,10 @@ def fetch_and_calculate(client_id):
     # 执行SQL查询
     with get_database_connection() as conn:
         with conn.cursor() as cursor:
-            query = ("SELECT material_code AS item_code, start_code, end_code FROM lcs_dispatch_cp_algorithmic_rule "
-                     "WHERE"
-                     "deleted = 0 "
-                     "AND client_id = %s;")
+            query = (
+                "SELECT material_code AS item_code, start_code, end_code FROM lcs_dispatch_cp_algorithmic_rule WHERE "
+                "deleted = 0 "
+                "AND client_id = %s;")
             df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
 
             query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s;"
@@ -406,10 +408,10 @@ def get_final_report():
         # 使用排序函数
         final_report = sort_by_fields(final_report, order_by_items)
 
-        return jsonify({"status": "success", "data": final_report})
+        return jsonify({"code": "0", "data": final_report, "message": "操作成功。"})
 
     except Exception as e:
-        return jsonify({"status": "error", "message": str("请检查最小库存小于仓库库容以及两者不为负数。")}), 400
+        return jsonify({"code": "-1", "message": str("请检查最小安全库存小于仓库库容以及两者不为负数。")}), 400
 
 
 if __name__ == '__main__':
