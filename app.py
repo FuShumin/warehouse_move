@@ -52,7 +52,7 @@ def sort_by_fields(data, order_by_items):
 
 def fetch_and_calculate(client_id):
     client_id = client_id
-    # client_id = 1691005891402997762
+    # client_id = 1691005891402997762, 1665993159813017601
     # 连接数据库
     # %%
     # 执行SQL查询
