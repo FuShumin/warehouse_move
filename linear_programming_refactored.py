@@ -2,30 +2,41 @@ from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOpt
 import numpy as np
 import pandas as pd
 
-def add_objective_function_linearized(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods,
-                                      transfer_vars):
+def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars, priority_weights):
     """
     Adds a linearized objective function to the problem to minimize the sum of absolute deviations
-    from the mean stock percentage level for each good across warehouses.
+    from the mean stock percentage level for each good across warehouses,
+    incorporating a priority strategy for warehouses.
     """
+    # Create a dictionary to hold the deviation variables for the sum of absolute deviations objective
     deviations = LpVariable.dicts("Deviation",
                                   ((i, k) for i in range(n_warehouses) for k in range(m_goods)),
                                   lowBound=0)  # Deviations are non-negative
 
+    # Add the objective to minimize the sum of deviations
     for k in range(m_goods):  # For each good
         stock_percentage_levels = [
-            (current_stock[i, k] + lpSum(
-                [transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)]))
+            (current_stock[i, k] + lpSum([transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)]))
             / max_stock_per_warehouse[i] for i in range(n_warehouses)
         ]
-        mean_percentage = lpSum(stock_percentage_levels) / n_warehouses
-        for i in range(n_warehouses):
-            prob += stock_percentage_levels[i] - mean_percentage <= deviations[
-                (i, k)], f"Deviation_upper_warehouse_{i}_good_{k}"
-            prob += mean_percentage - stock_percentage_levels[i] <= deviations[
-                (i, k)], f"Deviation_lower_warehouse_{i}_good_{k}"
 
-    prob += lpSum([deviations[(i, k)] for i in range(n_warehouses) for k in range(m_goods)]), "Minimize total deviation"
+        # Calculate the mean stock percentage level for good k
+        mean_percentage = lpSum(stock_percentage_levels) / n_warehouses
+
+        # Add constraints for deviations and adjust the objective function
+        for i in range(n_warehouses):
+            # Constraint that links the deviation variables with the stock percentage levels
+            prob += stock_percentage_levels[i] - mean_percentage <= deviations[(i, k)], f"Deviation_upper_warehouse_{i}_good_{k}"
+            prob += mean_percentage - stock_percentage_levels[i] <= deviations[(i, k)], f"Deviation_lower_warehouse_{i}_good_{k}"
+
+    # Add the deviations to the problem's objective
+    total_deviation = lpSum(deviations[(i, k)] for i in range(n_warehouses) for k in range(m_goods))
+    priority_cost = lpSum([transfer_vars[(i, j, k)] * priority_weights[j]
+                           for i in range(n_warehouses) for j in range(n_warehouses)
+                           for k in range(m_goods) if i != j])
+
+    # Add the priority cost to the existing objective function
+    prob += total_deviation + priority_cost, "Minimize_Total_Deviation_and_Priority_Cost"
 
 
 def add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
@@ -89,22 +100,28 @@ def extract_solution_refactored(prob, n_warehouses, m_goods, transfer_vars, curr
 # Initialization and problem solving
 n_warehouses = 2
 m_goods = 2
-current_stock = np.array([[20, 30], [15, 35]])  # Current stock for two goods in two warehouses
-max_stock_per_warehouse = [50, 50]  # Max stock per warehouse
+prob = LpProblem("Stock_Distribution_With_Priority_And_Rules", LpMinimize)
+
+# Define current stock, minimum and maximum safety stock, and max stock per warehouse
+current_stock = np.array([[40, 5], [10, 40]])  # Current stock for two goods in two warehouses
+max_stock_per_warehouse = [50, 50]  # Max stock per warehouse for two warehouses
 min_safety_stock = np.array([[10, 15], [5, 10]])  # Minimum safety stock for two goods in two warehouses
 max_safety_stock = np.array([[40, 45], [30, 40]])  # Maximum safety stock for two goods in two warehouses
 df_special_rules_index = pd.DataFrame({
-    'item_index': [0],  # Good '0'
+    'item_index': [1],  # Good '1'
     'start_index': [0],  # Warehouse '0'
-    'end_index': [1]  # Warehouse '1' where transfers are not allowed for Good '0'
+    'end_index': [1]  # Warehouse '1' where transfers are not allowed for Good '1' from Warehouse '0'
 })
+# Define the priority weights
+priority_weights = [1, 2]  # Lower number indicates higher priority
+
+# Define transfer variables for the corrected number of warehouses and goods
 transfer_vars = LpVariable.dicts("Transfer",
-                                 ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
-                                  range(m_goods)),
+                                 ((i, j, k) for i in range(2) for j in range(2) for k in range(2)),
                                  lowBound=0, cat='Continuous')
 
-prob = LpProblem("Stock_Distribution_Linearized_Test", LpMinimize)
-add_objective_function_linearized(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars)
+
+add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars, priority_weights)
 add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
                            n_warehouses, m_goods, transfer_vars)
 add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
