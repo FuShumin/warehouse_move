@@ -124,7 +124,7 @@ priority_weights = [1, 2]  # Lower number indicates higher priority
 transfer_vars = LpVariable.dicts("Transfer",
                                  ((i, j, k) for i in range(2) for j in range(2) for k in range(2)),
                                  lowBound=0, cat='Continuous')
-
+n_warehouses, m_goods = current_stock.shape
 add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
                             priority_weights)
 add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,

@@ -44,63 +44,76 @@ def apply_special_rules(from_warehouse, to_warehouse, good, amount, df_special_r
 # 贪婪转移策略函数
 def greedy_transfer_strategy(current_stock, max_total_stock_per_warehouse, min_safety_stock, max_safety_stock,
                              priority_weights, df_special_rules_index):
-    n_warehouses, m_goods = current_stock.shape  # 仓库和货物的数量
-    transfer_actions = []  # 转移行动记录
+    n_warehouses, m_goods = current_stock.shape
+    transfer_actions = []
 
-    priority_order = np.argsort(priority_weights)  # 根据权重确定优先级顺序
+    priority_order = np.argsort(priority_weights)  # 根据权重确定优先级顺序，priority_order是仓库的索引
 
-    # 对每个仓库执行检查和转移操作
     for from_warehouse in range(n_warehouses):
-        total_stock_from = np.sum(current_stock[from_warehouse, :])  # 计算起始仓库的总库存
-        # 检查并执行可能的转移
-        for good in range(m_goods):
-            # 检查源仓库的当前库存是否超过最大安全库存
-            if current_stock[from_warehouse, good] > max_safety_stock[from_warehouse, good]:
-                # 计算需要减少的库存量
-                amount_to_reduce = current_stock[from_warehouse, good] - max_safety_stock[from_warehouse, good]
-                # 遍历优先级仓库以转移库存
-                for to_warehouse in priority_order:
-                    if to_warehouse != from_warehouse:
-                        total_stock_to = np.sum(current_stock[to_warehouse, :])  # 目标仓库的总库存
-                        available_space = max_total_stock_per_warehouse[to_warehouse] - total_stock_to  # 可用空间
-                        # 如果目标仓库有可用空间，尝试转移
-                        if available_space > 0:
-                            # 检查源仓库的最小安全库存，确定可转移的最大数量
-                            if current_stock[from_warehouse, good] - amount_to_reduce >= min_safety_stock[
-                                from_warehouse, good]:
-                                potential_transfer_amount = min(amount_to_reduce, available_space,
-                                                                max_safety_stock[to_warehouse, good] - current_stock[
-                                                                    to_warehouse, good])
+        total_stock_from = np.sum(current_stock[from_warehouse, :])
+        if total_stock_from > max_total_stock_per_warehouse[from_warehouse]:
+            amount_to_reduce = total_stock_from - max_total_stock_per_warehouse[from_warehouse]
+
+            for to_warehouse in priority_order:
+                if to_warehouse != from_warehouse:
+                    total_stock_to = np.sum(current_stock[to_warehouse, :])
+                    available_space = max_total_stock_per_warehouse[to_warehouse] - total_stock_to
+
+                    if available_space > 0:
+                        for good in range(m_goods):
+                            # 确保源仓库当前库存高于最小安全库存
+                            if current_stock[from_warehouse, good] > min_safety_stock[from_warehouse, good]:
+                                # 潜在转移量
+                                potential_transfer_amount = min(
+                                    max(0,
+                                        current_stock[from_warehouse, good] - min_safety_stock[from_warehouse, good]),
+                                    amount_to_reduce,
+                                    available_space
+                                )
+
+                                # 确保目标仓库不会超过最大安全库存
+                                max_transfer_to = max(0, max_safety_stock[to_warehouse, good] - current_stock[
+                                    to_warehouse, good])
+
                                 # 应用特殊规则
-                                transfer_amount = apply_special_rules(from_warehouse, to_warehouse, good,
-                                                                      potential_transfer_amount, df_special_rules_index)
+                                transfer_amount = min(
+                                    potential_transfer_amount,
+                                    max_transfer_to,
+                                    apply_special_rules(from_warehouse, to_warehouse, good,
+                                                        potential_transfer_amount, df_special_rules_index)
+                                )
+
                                 # 执行转移
                                 current_stock[from_warehouse, good] -= transfer_amount
                                 current_stock[to_warehouse, good] += transfer_amount
-                                # 记录转移行为
-                                if transfer_amount > 0:
+                                amount_to_reduce -= transfer_amount
+                                available_space -= transfer_amount
+
+                                if transfer_amount > 1e-5:
                                     transfer_actions.append({
                                         'from_warehouse': from_warehouse,
                                         'to_warehouse': to_warehouse,
                                         'good': good,
                                         'amount': transfer_amount
                                     })
-                                # 更新转移后的数量
-                                amount_to_reduce -= transfer_amount
-                                available_space -= transfer_amount
-                                # 如果没有库存或空间需要转移，退出循环
+
                                 if amount_to_reduce <= 0 or available_space <= 0:
                                     break
                         if amount_to_reduce <= 0:
                             break
-    return transfer_actions, current_stock  # 返回转移行为和更新后的库存
+    return transfer_actions, current_stock
 
 
 # 测试贪婪转移策略函数
 t0 = time.time()
+max_warehouse_capacity[4] = 500
+max_safety_stock[4, :] = 500
 transfer_actions, updated_stock = greedy_transfer_strategy(
     current_stock, max_warehouse_capacity, min_safety_stock, max_safety_stock, priority_weights, special_rules
 )
+# transfer_actions, updated_stock = greedy_transfer_strategy(
+#     current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock, priority_weights, df_special_rules_index
+# )
 t1 = time.time()
 print(transfer_actions, f'\n', updated_stock)
 print('time cost: ', t1 - t0)
