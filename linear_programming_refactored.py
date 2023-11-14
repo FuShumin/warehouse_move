@@ -2,7 +2,9 @@ from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOpt
 import numpy as np
 import pandas as pd
 
-def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars, priority_weights):
+
+def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
+                                priority_weights):
     """
     Adds a linearized objective function to the problem to minimize the sum of absolute deviations
     from the mean stock percentage level for each good across warehouses,
@@ -16,7 +18,8 @@ def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_
     # Add the objective to minimize the sum of deviations
     for k in range(m_goods):  # For each good
         stock_percentage_levels = [
-            (current_stock[i, k] + lpSum([transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)]))
+            (current_stock[i, k] + lpSum(
+                [transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)]))
             / max_stock_per_warehouse[i] for i in range(n_warehouses)
         ]
 
@@ -26,8 +29,10 @@ def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_
         # Add constraints for deviations and adjust the objective function
         for i in range(n_warehouses):
             # Constraint that links the deviation variables with the stock percentage levels
-            prob += stock_percentage_levels[i] - mean_percentage <= deviations[(i, k)], f"Deviation_upper_warehouse_{i}_good_{k}"
-            prob += mean_percentage - stock_percentage_levels[i] <= deviations[(i, k)], f"Deviation_lower_warehouse_{i}_good_{k}"
+            prob += stock_percentage_levels[i] - mean_percentage <= deviations[
+                (i, k)], f"Deviation_upper_warehouse_{i}_good_{k}"
+            prob += mean_percentage - stock_percentage_levels[i] <= deviations[
+                (i, k)], f"Deviation_lower_warehouse_{i}_good_{k}"
 
     # Add the deviations to the problem's objective
     total_deviation = lpSum(deviations[(i, k)] for i in range(n_warehouses) for k in range(m_goods))
@@ -74,7 +79,7 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
                 # Check if the transfer variable exists and if so, add a constraint that it must be zero
                 if (start_index, j, item_index) in transfer_vars:
                     prob += transfer_vars[(
-                    start_index, j, item_index)] == 0, f"Special_rule_{start_index}_to_{j}_good_{item_index}"
+                        start_index, j, item_index)] == 0, f"Special_rule_{start_index}_to_{j}_good_{item_index}"
 
 
 def extract_solution_refactored(prob, n_warehouses, m_goods, transfer_vars, current_stock, max_stock_per_warehouse):
@@ -120,8 +125,8 @@ transfer_vars = LpVariable.dicts("Transfer",
                                  ((i, j, k) for i in range(2) for j in range(2) for k in range(2)),
                                  lowBound=0, cat='Continuous')
 
-
-add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars, priority_weights)
+add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
+                            priority_weights)
 add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
                            n_warehouses, m_goods, transfer_vars)
 add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)

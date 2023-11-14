@@ -23,7 +23,7 @@ def get_database_connection():
     port = int(os.environ.get('DB_PORT', 3306))
     user = os.environ.get('DB_USER', 'root')
     password = os.environ.get('DB_PASSWORD', 'nti56.com')
-    database = os.environ.get('DB_NAME', 'lcs')
+    database = os.environ.get('DB_NAME', 'lcs-sit')
 
     return pymysql.connect(host=host, port=port, user=user, password=password, database=database)
 
@@ -410,7 +410,7 @@ def get_final_report():
         return jsonify({"code": 0, "data": final_report, "message": "操作成功。"})
 
     except Exception as e:
-        return jsonify({"code": -1, "message": str("请检查最小安全库存小于仓库库容以及两者不为负数。")}), 400
+        return jsonify({"code": -1, "message": str("生成方案失败")}), 400
 
 
 @app.route('/test', methods=['GET'])
