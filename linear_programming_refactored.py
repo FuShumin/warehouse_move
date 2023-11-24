@@ -82,7 +82,7 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
                         start_index, j, item_index)] == 0, f"Special_rule_{start_index}_to_{j}_good_{item_index}"
 
 
-def extract_solution_refactored(prob, n_warehouses, m_goods, transfer_vars, current_stock, max_stock_per_warehouse):
+def extract_solution_refactored(n_warehouses, m_goods, transfer_vars, current_stock, max_stock_per_warehouse):
     """
     Extracts the solution from the solved problem, checking for feasibility of individual actions.
     """
@@ -132,6 +132,6 @@ add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_saf
 add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
 
 prob.solve()
-actions = extract_solution_refactored(prob, n_warehouses, m_goods, transfer_vars, current_stock,
+actions = extract_solution_refactored(n_warehouses, m_goods, transfer_vars, current_stock,
                                       max_stock_per_warehouse)
 print(actions)

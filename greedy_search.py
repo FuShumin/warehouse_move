@@ -117,3 +117,5 @@ transfer_actions, updated_stock = greedy_transfer_strategy(
 t1 = time.time()
 print(transfer_actions, f'\n', updated_stock)
 print('time cost: ', t1 - t0)
+print('total_current_stock',np.sum(current_stock[:,:],axis=1))
+print('max_per_house:', max_warehouse_capacity)
