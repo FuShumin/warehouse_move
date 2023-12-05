@@ -256,7 +256,6 @@ def get_final_report():
         # 模糊搜索
         if regulation_name:
             final_report = [x for x in final_report if regulation_name.lower() in x.get('regulation_name', '').lower()]
-
         if cigarette_type:
             final_report = [x for x in final_report if x.get('cigarette_type') == cigarette_type]
         if send_code:

@@ -56,6 +56,7 @@ def add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min
                 [transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)])
             prob += stock_after_transfers >= min_safety_stock[i, k], f"Min_safety_stock_warehouse_{i}_good_{k}"
             prob += stock_after_transfers <= max_safety_stock[i, k], f"Max_safety_stock_warehouse_{i}_good_{k}"
+            prob += transfer_vars[(i, i, k)] == 0, f"No_transfer_within_same_warehouse_{i}_good_{k}"
 
             for j in range(n_warehouses):  # For each potential transfer
                 if i != j:
@@ -80,7 +81,7 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
         start_index = row['start_index']
         end_index = row['end_index']
         for j in range(n_warehouses):
-            if j != end_index:
+            if j != end_index and j != start_index:
                 # Check if the transfer variable exists and if so, add a constraint that it must be zero
                 if (start_index, j, item_index) in transfer_vars:
                     prob += transfer_vars[(
@@ -113,14 +114,14 @@ m_goods = 2
 prob = LpProblem("Stock_Distribution_With_Priority_And_Rules", LpMinimize)
 
 # Define current stock, minimum and maximum safety stock, and max stock per warehouse
-current_stock = np.array([[0, 5], [-10, 70]])  # Current stock for two goods in two warehouses
+current_stock = np.array([[20, 5], [10, 60]])  # Current stock for two goods in two warehouses
 max_stock_per_warehouse = [50, 50]  # Max stock per warehouse for two warehouses
 min_safety_stock = np.array([[10, 15], [5, 10]])  # Minimum safety stock for two goods in two warehouses
 max_safety_stock = np.array([[40, 45], [30, 40]])  # Maximum safety stock for two goods in two warehouses
 df_special_rules_index = pd.DataFrame({
     'item_index': [1],  # Good '1'
     'start_index': [0],  # Warehouse '0'
-    'end_index': [1]  # Warehouse '1' where transfers are not allowed for Good '1' from Warehouse '0' # TODO NOT ALLOWED？
+    'end_index': [1]  # Warehouse '1' where transfers 仅允许 for Good '1' from Warehouse '0' #
 })
 # Define the priority weights
 priority_weights = [1, 2]  # Lower number indicates higher priority
