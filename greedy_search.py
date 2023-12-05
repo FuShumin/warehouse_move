@@ -111,11 +111,10 @@ max_safety_stock[4, :] = 500
 transfer_actions, updated_stock = greedy_transfer_strategy(
     current_stock, max_warehouse_capacity, min_safety_stock, max_safety_stock, priority_weights, special_rules
 )
-# transfer_actions, updated_stock = greedy_transfer_strategy(
-#     current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock, priority_weights, df_special_rules_index
-# )
+# transfer_actions, updated_stock = greedy_transfer_strategy( current_stock, max_stock_per_warehouse,
+# min_safety_stock, max_safety_stock, priority_weights, df_special_rules_index )
 t1 = time.time()
 print(transfer_actions, f'\n', updated_stock)
 print('time cost: ', t1 - t0)
-print('total_current_stock',np.sum(current_stock[:,:],axis=1))
+print('total_current_stock', np.sum(current_stock[:, :], axis=1))
 print('max_per_house:', max_warehouse_capacity)

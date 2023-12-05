@@ -59,11 +59,16 @@ def add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min
 
             for j in range(n_warehouses):  # For each potential transfer
                 if i != j:
-                    prob += transfer_vars[(i, j, k)] <= current_stock[
-                        i, k], f"Max_transfer_warehouse_{i}_to_{j}_good_{k}"
-                    prob += transfer_vars[(i, j, k)] >= 0, f"Non_negative_transfer_warehouse_{i}_to_{j}_good_{k}"
-                    prob += transfer_vars[(i, j, k)] <= max_stock_per_warehouse[j] - current_stock[
-                        j, k], f"No_overstock_warehouse_{j}_good_{k}"
+                    if current_stock[i, k] < 0:
+                        prob += transfer_vars[
+                                    (i, j, k)] <= 0, f"Zero_transfer_warehouse_{i}_to_{j}_good_{k}_negative_stock"
+                    else:
+                        prob += transfer_vars[(i, j, k)] >= 0, f"Non_negative_transfer_warehouse_{i}_to_{j}_good_{k}"
+                        prob += transfer_vars[(i, j, k)] <= current_stock[
+                            i, k], f"Max_transfer_warehouse_{i}_to_{j}_good_{k}"
+
+                    prob += transfer_vars[(i, j, k)] <= max(0, max_stock_per_warehouse[j] - current_stock[j, k]), \
+                        f"No_overstock_warehouse_{j}_good_{k}"
 
 
 def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars):
@@ -95,7 +100,7 @@ def extract_solution_refactored(n_warehouses, m_goods, transfer_vars, current_st
                     if transfer_amount > 1e-5:
                         new_stock_source = current_stock[i, k] - transfer_amount
                         new_stock_dest = current_stock[j, k] + transfer_amount
-                        if (new_stock_source >= 0 and new_stock_dest <= max_stock_per_warehouse[j]):
+                        if new_stock_source >= 0 and new_stock_dest <= max_stock_per_warehouse[j]:
                             actions.append((i, j, k, transfer_amount))
                         else:
                             raise ValueError(f"Transfer from warehouse {i} to {j} of good {k} is not feasible.")
@@ -108,14 +113,14 @@ m_goods = 2
 prob = LpProblem("Stock_Distribution_With_Priority_And_Rules", LpMinimize)
 
 # Define current stock, minimum and maximum safety stock, and max stock per warehouse
-current_stock = np.array([[40, 5], [10, 40]])  # Current stock for two goods in two warehouses
+current_stock = np.array([[0, 5], [-10, 70]])  # Current stock for two goods in two warehouses
 max_stock_per_warehouse = [50, 50]  # Max stock per warehouse for two warehouses
 min_safety_stock = np.array([[10, 15], [5, 10]])  # Minimum safety stock for two goods in two warehouses
 max_safety_stock = np.array([[40, 45], [30, 40]])  # Maximum safety stock for two goods in two warehouses
 df_special_rules_index = pd.DataFrame({
     'item_index': [1],  # Good '1'
     'start_index': [0],  # Warehouse '0'
-    'end_index': [1]  # Warehouse '1' where transfers are not allowed for Good '1' from Warehouse '0'
+    'end_index': [1]  # Warehouse '1' where transfers are not allowed for Good '1' from Warehouse '0' # TODO NOT ALLOWED？
 })
 # Define the priority weights
 priority_weights = [1, 2]  # Lower number indicates higher priority
