@@ -45,7 +45,10 @@ def fetch_data(client_id):
                 "AND client_id = %s;")
             df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
 
-            query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s;"
+            query = "SELECT warehouse_code, warehouse_name, priority FROM lcs_dispatch_cp_warehouse_priority WHERE client_id = %s AND deleted=0;"
+            df_priority = execute_query(cursor, query, (client_id,))   # 仓库优先级
+
+            query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s AND is_delete=0;"
             df_current_stock = execute_query(cursor, query, (client_id,))  # 当前库存
 
             query = ("SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s AND is_delete=0 AND "
@@ -98,4 +101,4 @@ def fetch_data(client_id):
             query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s AND is_delete = 0;"
             df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
     return (df_special_rules, df_current_stock, df_max_stock, df_onload_stock, df_min_safe, df_max_safe,
-            df_item_attributes, df_item_info, df_warehouse_info)
+            df_item_attributes, df_item_info, df_warehouse_info, df_priority)

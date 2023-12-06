@@ -155,11 +155,3 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
 
     actions = extract_solution(prob, n_warehouses, m_goods, transfer_vars, current_stock)
     return actions
-
-
-
-
-
-
-
-

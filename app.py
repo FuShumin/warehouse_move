@@ -19,7 +19,7 @@ def fetch_and_calculate(client_id):
     # %%
     # 执行SQL查询
     (df_special_rules, df_current_stock, df_max_stock, df_onload_stock, df_min_safe, df_max_safe, df_item_attributes,
-     df_item_info, df_warehouse_info) = fetch_data(client_id)
+     df_item_info, df_warehouse_info,df_priority) = fetch_data(client_id)
 
     # SECTION 当前库存处理
     df_max_stock.rename(columns={'code': 'warehouse_code'}, inplace=True)
@@ -53,6 +53,13 @@ def fetch_and_calculate(client_id):
             i = warehouse_to_index[warehouse_code]
             j = item_to_index[item_code]
             current_stock_report[i, j] = row['available_stock']
+
+    # SECTION 优先级处理
+    df_priority['priority'] = pd.to_numeric(df_priority['priority'], errors='coerce')
+    df_priority['index'] = df_priority['warehouse_code'].map(warehouse_to_index)
+    df_priority.sort_values('index', inplace=True)
+    df_priority.dropna(subset=['index'], inplace=True)
+    priority_weights = np.array(df_priority['priority'])
     # SECTION 最大库容处理
     # 将 'safe_stock' 列转换为数字
     df_max_stock['safe_stock'] = pd.to_numeric(df_max_stock['safe_stock'], errors='coerce')
