@@ -3,13 +3,22 @@ import pymysql
 import pandas as pd
 
 
-def get_database_connection():
-    """Establish and return a database connection."""
-    host = os.environ.get('DB_HOST', '10.1.20.196')
-    port = int(os.environ.get('DB_PORT', 3306))
-    user = os.environ.get('DB_USER', 'root')
-    password = os.environ.get('DB_PASSWORD', 'nti56.com')
-    database = os.environ.get('DB_NAME', 'lcs-sit')
+def get_database_connection(use_alternative_db=False):
+    """Establish and return a database connection, optionally using an alternative database."""
+    if use_alternative_db:
+        # 用于查询数据字典的数据库
+        host = os.environ.get('ALT_DB_HOST', '10.1.21.205')
+        port = int(os.environ.get('ALT_DB_PORT', 3306))
+        user = os.environ.get('ALT_DB_USER', 'root')
+        password = os.environ.get('ALT_DB_PASSWORD', 'Nti56@com')
+        database = os.environ.get('ALT_DB_NAME', 'module_ucenter')
+    else:
+        # 库存信息数据库
+        host = os.environ.get('DB_HOST', '10.1.20.196')
+        port = int(os.environ.get('DB_PORT', 3306))
+        user = os.environ.get('DB_USER', 'root')
+        password = os.environ.get('DB_PASSWORD', 'nti56.com')
+        database = os.environ.get('DB_NAME', 'lcs-sit')
 
     return pymysql.connect(host=host, port=port, user=user, password=password, database=database)
 
@@ -44,6 +53,9 @@ def fetch_data(client_id):
                 "deleted = 0 "
                 "AND client_id = %s;")
             df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
+
+            query = "SELECT production_area, mark AS item_code, plan_qty, start_time, end_time FROM lcs_dispatch_cp_produce_detail WHERE client_id = %s AND deleted=0;"
+            df_produce = execute_query(cursor, query, (client_id,))  # 生产计划预入库
 
             query = "SELECT warehouse_code, warehouse_name, priority FROM lcs_dispatch_cp_warehouse_priority WHERE client_id = %s AND deleted=0;"
             df_priority = execute_query(cursor, query, (client_id,))   # 仓库优先级
@@ -100,5 +112,12 @@ def fetch_data(client_id):
             # 从 warehouse_info 表中找到 code（即 warehouse_code）对应的 name
             query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s AND is_delete = 0;"
             df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
+
+    with get_database_connection(use_alternative_db=True) as conn_alt:
+        with conn_alt.cursor() as cursor:
+            query = (
+                "SELECT name, dict_code FROM t_dict WHERE cate_id = 1699991805804904451 AND deleted = 0;")
+            df_produce_mapping = execute_query(cursor, query)  # 生产区域-仓库编码 映射关系
+
     return (df_special_rules, df_current_stock, df_max_stock, df_onload_stock, df_min_safe, df_max_safe,
-            df_item_attributes, df_item_info, df_warehouse_info, df_priority)
+            df_item_attributes, df_item_info, df_warehouse_info, df_priority, df_produce, df_produce_mapping)

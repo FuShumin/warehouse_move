@@ -2,9 +2,10 @@ from database_operations import *
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-from linear_programming import optimize_stock_distribution_percentage
+from linear_programming_refactored import optimize_stock_distribution_percentage
 from datetime import datetime
 from flask import Flask, jsonify, request
+from utils import *
 
 app = Flask(__name__)
 # app.config['JSON_AS_ASCII'] = False
@@ -19,7 +20,7 @@ def fetch_and_calculate(client_id):
     # %%
     # 执行SQL查询
     (df_special_rules, df_current_stock, df_max_stock, df_onload_stock, df_min_safe, df_max_safe, df_item_attributes,
-     df_item_info, df_warehouse_info,df_priority) = fetch_data(client_id)
+     df_item_info, df_warehouse_info, df_priority, df_produce, df_produce_mapping) = fetch_data(client_id)
 
     # SECTION 当前库存处理
     df_max_stock.rename(columns={'code': 'warehouse_code'}, inplace=True)
@@ -157,21 +158,22 @@ def fetch_and_calculate(client_id):
 
     # 将列表转换为DataFrame
     df_special_rules_index = pd.DataFrame(special_rules_index_list)
+
+    # 生产计划调整预入库
+    expected_incoming = summarize_production_plans(df_produce, df_produce_mapping, day_range=1)
+
+    max_stock_per_warehouse = adjust_max_stock(expected_incoming, warehouse_to_index, max_stock_per_warehouse)
+    max_safety_stock = update_safety_stock(expected_incoming, warehouse_to_index, item_to_index, max_safety_stock,
+                                           min_safety_stock)
     # %%
     # SECTION 调用线性规划算法 获取actions
     try:
-        actions = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse,
-                                                         min_safety_stock, max_safety_stock,
-                                                         df_special_rules_index)
+        actions, status = optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse,
+                                                                 min_safety_stock, max_safety_stock,
+                                                                 df_special_rules_index, priority_weights)
     except Exception as e:
         print(f"Error: {e}")
         actions = None
-        # 创建一部字典来存储整合后的移库方案
-    consolidated_actions = defaultdict(float)
-    # 移库方案整合
-    for i, j, k, qty in actions:
-        key = (i, j, k)
-        consolidated_actions[key] += qty
 
     # 将 item_code 映射到 item_name
     item_code_to_name = {row['item_code']: row['item_name'] for _, row in df_item_info.iterrows()}

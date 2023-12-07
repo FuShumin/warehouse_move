@@ -4,7 +4,7 @@ import pandas as pd
 
 
 def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
-                                priority_weights):
+                                priority_weights, slack):
     """
     添加目标函数，其中包含了对爆仓量，货物平均，以及权重的考虑。
     """
@@ -12,6 +12,8 @@ def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_
     deviations = LpVariable.dicts("Deviation",
                                   ((i, k) for i in range(n_warehouses) for k in range(m_goods)),
                                   lowBound=0)
+
+    slack_penalty = 500 * lpSum(slack[i, k] for i in range(n_warehouses) for k in range(m_goods))
 
     # 平均偏差优化目标
     for k in range(m_goods):
@@ -47,12 +49,12 @@ def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_
         total_excess_stock = lpSum(excess_stock[i] for i in excess_stock.keys())
     else:
         total_excess_stock = 0
-    prob += (total_deviation + priority_cost + 2 * total_excess_stock,
+    prob += (total_deviation + priority_cost + total_excess_stock + slack_penalty,
              "Minimize_Total_Deviation_and_Priority_Cost_and_ExcessStock")
 
 
-def add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
-                               n_warehouses, m_goods, transfer_vars):
+def add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
+                    n_warehouses, m_goods, transfer_vars, slack):
     """
     添加常规约束条件：
     1. 最大最小安全库存；
@@ -69,10 +71,13 @@ def add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min
         prob += total_stock_in_warehouse <= max_stock_per_warehouse[i], f"Max_stock_limit_warehouse_{i}"
 
         for k in range(m_goods):
+            prob += slack[i, k] <= 10, f"slack_a_little_{i}_{k}"
             stock_after_transfers = current_stock[i, k] + lpSum(
                 [transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)])
-            prob += stock_after_transfers >= min_safety_stock[i, k], f"Min_safety_stock_warehouse_{i}_good_{k}"
-            prob += stock_after_transfers <= max_safety_stock[i, k], f"Max_safety_stock_warehouse_{i}_good_{k}"
+            prob += stock_after_transfers + slack[i, k] >= min_safety_stock[
+                i, k], f"Min_safety_stock_warehouse_{i}_good_{k}"
+            prob += stock_after_transfers - slack[i, k] <= max_safety_stock[
+                i, k], f"Max_safety_stock_warehouse_{i}_good_{k}"
             prob += transfer_vars[(i, i, k)] == 0, f"No_transfer_within_same_warehouse_{i}_good_{k}"
 
             for j in range(n_warehouses):
@@ -116,7 +121,7 @@ def add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
                             (start_index, j, item_index)] == 0, f"Special_rule_{start_index}_to_{j}_good_{item_index}"
 
 
-def extract_solution_refactored(n_warehouses, m_goods, transfer_vars, current_stock, max_stock_per_warehouse):
+def extract_solution(n_warehouses, m_goods, transfer_vars, current_stock, max_stock_per_warehouse):
     """
     从求解器结果中解析移库量
     """
@@ -143,21 +148,25 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
 
     prob = LpProblem("Stock_Distribution_With_Priority_And_Rules", LpMinimize)
     n_warehouses, m_goods = current_stock.shape
+    # 移库动作变量
     transfer_vars = LpVariable.dicts("Transfer",
                                      ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
                                       range(m_goods)),
                                      lowBound=0, cat='Continuous')
+    # 松弛变量
+    slack = LpVariable.dicts("slack", ((i, k) for i in range(n_warehouses) for k in range(m_goods)), lowBound=0)
 
     add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
-                                priority_weights)
-    add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
-                               n_warehouses, m_goods, transfer_vars)
+                                priority_weights, slack)
+    add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
+                    n_warehouses, m_goods, transfer_vars, slack)
     add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
 
     prob.solve()
-    var_dicts = prob.variablesDict()
-    actions = extract_solution_refactored(n_warehouses, m_goods, transfer_vars, current_stock,
-                                          max_stock_per_warehouse)
+    actions = extract_solution(n_warehouses, m_goods, transfer_vars, current_stock,
+                               max_stock_per_warehouse)
+    status = prob.status
+    return actions, status
 
 
 # %%
@@ -176,17 +185,18 @@ def main():
                                      ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
                                       range(m_goods)),
                                      lowBound=0, cat='Continuous')
+    slack = LpVariable.dicts("slack", ((i, k) for i in range(n_warehouses) for k in range(m_goods)), lowBound=0)
 
     add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
-                                priority_weights)
-    add_constraints_refactored(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
-                               n_warehouses, m_goods, transfer_vars)
+                                priority_weights, slack)
+    add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
+                    n_warehouses, m_goods, transfer_vars, slack)
     add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
 
     prob.solve()
-    var_dicts = prob.variablesDict()
-    actions = extract_solution_refactored(n_warehouses, m_goods, transfer_vars, current_stock,
-                                          max_stock_per_warehouse)
+    # var_dicts = prob.variablesDict()
+    actions = extract_solution(n_warehouses, m_goods, transfer_vars, current_stock,
+                               max_stock_per_warehouse)
 
     print(actions)
     print("current_stock", current_stock)
