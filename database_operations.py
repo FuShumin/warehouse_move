@@ -1,6 +1,7 @@
 import os
 import pymysql
 import pandas as pd
+from utils import DatabaseFetchError
 
 
 def get_database_connection(use_alternative_db=False):
@@ -46,78 +47,82 @@ def sort_by_fields(data, order_by_items):
 
 
 def fetch_data(client_id):
-    with get_database_connection() as conn:
-        with conn.cursor() as cursor:
-            query = (
-                "SELECT material_code AS item_code, start_code, end_code FROM lcs_dispatch_cp_algorithmic_rule WHERE "
-                "deleted = 0 "
-                "AND client_id = %s;")
-            df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
+    try:
+        with get_database_connection() as conn:
+            with conn.cursor() as cursor:
+                query = (
+                    "SELECT material_code AS item_code, start_code, end_code FROM lcs_dispatch_cp_algorithmic_rule WHERE "
+                    "deleted = 0 "
+                    "AND client_id = %s;")
+                df_special_rules = execute_query(cursor, query, (client_id,))  # 特殊规则
 
-            query = "SELECT production_area, mark AS item_code, plan_qty, start_time, end_time FROM lcs_dispatch_cp_produce_detail WHERE client_id = %s AND deleted=0;"
-            df_produce = execute_query(cursor, query, (client_id,))  # 生产计划预入库
+                query = "SELECT production_area, mark AS item_code, plan_qty, start_time, end_time FROM lcs_dispatch_cp_produce_detail WHERE client_id = %s AND deleted=0;"
+                df_produce = execute_query(cursor, query, (client_id,))  # 生产计划预入库
 
-            query = "SELECT warehouse_code, warehouse_name, priority FROM lcs_dispatch_cp_warehouse_priority WHERE client_id = %s AND deleted=0;"
-            df_priority = execute_query(cursor, query, (client_id,))   # 仓库优先级
+                query = "SELECT warehouse_code, warehouse_name, priority FROM lcs_dispatch_cp_warehouse_priority WHERE client_id = %s AND deleted=0;"
+                df_priority = execute_query(cursor, query, (client_id,))  # 仓库优先级
 
-            query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s AND is_delete=0;"
-            df_current_stock = execute_query(cursor, query, (client_id,))  # 当前库存
+                query = "SELECT warehouse_code, item_code, available_stock FROM stock WHERE client_id = %s AND is_delete=0;"
+                df_current_stock = execute_query(cursor, query, (client_id,))  # 当前库存
 
-            query = ("SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s AND is_delete=0 AND "
-                     "safe_stock IS NOT NULL;")
-            df_max_stock = execute_query(cursor, query, (client_id,))  # 最大库存
+                query = ("SELECT code, safe_stock FROM stock_warehouse_info WHERE client_id = %s AND is_delete=0 AND "
+                         "safe_stock IS NOT NULL;")
+                df_max_stock = execute_query(cursor, query, (client_id,))  # 最大库存
 
-            query = ("SELECT warehouse_code, warehouse_name, item_code, item_name, onload_stock FROM stock "
-                     "WHERE onload_stock > 0 AND client_id = %s;")
-            df_onload_stock = execute_query(cursor, query, (client_id,))  # 在途库存
+                query = ("SELECT warehouse_code, warehouse_name, item_code, item_name, onload_stock FROM stock "
+                         "WHERE onload_stock > 0 AND client_id = %s;")
+                df_onload_stock = execute_query(cursor, query, (client_id,))  # 在途库存
 
-            query = """
-                SELECT t.warehouse_code, t.item_code, t.min_stock
-                FROM (
-                    SELECT c.*, i.name AS warehouse_name
-                    FROM stock_safe_config c
-                    LEFT JOIN stock_warehouse_info i ON i.code = c.warehouse_code
-                    WHERE c.deleted = 0
-                ) t
-                WHERE t.deleted = 0 AND client_id = %s;"""
-            df_min_safe = execute_query(cursor, query, (client_id,))  # 牌号最小安全库存
+                query = """
+                    SELECT t.warehouse_code, t.item_code, t.min_stock
+                    FROM (
+                        SELECT c.*, i.name AS warehouse_name
+                        FROM stock_safe_config c
+                        LEFT JOIN stock_warehouse_info i ON i.code = c.warehouse_code
+                        WHERE c.deleted = 0
+                    ) t
+                    WHERE t.deleted = 0 AND client_id = %s;"""
+                df_min_safe = execute_query(cursor, query, (client_id,))  # 牌号最小安全库存
 
-            query = """
-                SELECT t.warehouse_code, t.item_code, t.max_stock
-                FROM (
-                    SELECT c.*, i.name AS warehouse_name
-                    FROM stock_safe_config c
-                    LEFT JOIN stock_warehouse_info i ON i.code = c.warehouse_code
-                    WHERE c.deleted = 0
-                ) t
-                WHERE t.deleted = 0 AND client_id = %s;"""
-            df_max_safe = execute_query(cursor, query, (client_id,))  # 牌号最大安全库存
+                query = """
+                    SELECT t.warehouse_code, t.item_code, t.max_stock
+                    FROM (
+                        SELECT c.*, i.name AS warehouse_name
+                        FROM stock_safe_config c
+                        LEFT JOIN stock_warehouse_info i ON i.code = c.warehouse_code
+                        WHERE c.deleted = 0
+                    ) t
+                    WHERE t.deleted = 0 AND client_id = %s;"""
+                df_max_safe = execute_query(cursor, query, (client_id,))  # 牌号最大安全库存
 
-            query = """
-                SELECT
-                    material_info.code, material_info_attr.attr_value, material_info_attr.attr_id
-                FROM
-                    material_info
-                JOIN material_info_attr ON material_info.id = material_info_attr.material_id
-                JOIN material_attr ON material_info_attr.attr_id = material_attr.id
-                WHERE
-                    material_attr.name = '卷烟类型' AND material_info.client_id = %s;
-            """
-            df_item_attributes = execute_query(cursor, query, (client_id,))  # 成品属性
+                query = """
+                    SELECT
+                        material_info.code, material_info_attr.attr_value, material_info_attr.attr_id
+                    FROM
+                        material_info
+                    JOIN material_info_attr ON material_info.id = material_info_attr.material_id
+                    JOIN material_attr ON material_info_attr.attr_id = material_attr.id
+                    WHERE
+                        material_attr.name = '卷烟类型' AND material_info.client_id = %s;
+                """
+                df_item_attributes = execute_query(cursor, query, (client_id,))  # 成品属性
 
-            query = ("SELECT code AS item_code, name AS item_name FROM material_info WHERE client_id = %s AND "
-                     "is_delete = 0;")
-            df_item_info = execute_query(cursor, query, (client_id,))  # 物品信息
+                query = ("SELECT code AS item_code, name AS item_name FROM material_info WHERE client_id = %s AND "
+                         "is_delete = 0;")
+                df_item_info = execute_query(cursor, query, (client_id,))  # 物品信息
 
-            # 从 warehouse_info 表中找到 code（即 warehouse_code）对应的 name
-            query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s AND is_delete = 0;"
-            df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
+                # 从 warehouse_info 表中找到 code（即 warehouse_code）对应的 name
+                query = "SELECT code, name FROM stock_warehouse_info WHERE client_id = %s AND is_delete = 0;"
+                df_warehouse_info = execute_query(cursor, query, (client_id,))  # 仓库信息
 
-    with get_database_connection(use_alternative_db=True) as conn_alt:
-        with conn_alt.cursor() as cursor:
-            query = (
-                "SELECT name, dict_code FROM t_dict WHERE cate_id = 1699991805804904451 AND deleted = 0;")
-            df_produce_mapping = execute_query(cursor, query)  # 生产区域-仓库编码 映射关系
+        with get_database_connection(use_alternative_db=True) as conn_alt:
+            with conn_alt.cursor() as cursor:
+                query = (
+                    "SELECT name, dict_code FROM t_dict WHERE cate_id = 1699991805804904451 AND deleted = 0;")
+                df_produce_mapping = execute_query(cursor, query)  # 生产区域-仓库编码 映射关系
 
-    return (df_special_rules, df_current_stock, df_max_stock, df_onload_stock, df_min_safe, df_max_safe,
-            df_item_attributes, df_item_info, df_warehouse_info, df_priority, df_produce, df_produce_mapping)
+        return (df_special_rules, df_current_stock, df_max_stock, df_onload_stock, df_min_safe, df_max_safe,
+                df_item_attributes, df_item_info, df_warehouse_info, df_priority, df_produce, df_produce_mapping)
+
+    except Exception as e:
+        raise DatabaseFetchError(f"Error fetching data for client_id {client_id}: {e}")

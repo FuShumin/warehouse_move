@@ -1,6 +1,9 @@
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOptimal
+from pulp import LpMinimize, LpProblem, LpVariable, lpSum, LpStatus, LpStatusOptimal, value, PULP_CBC_CMD
 import numpy as np
 import pandas as pd
+import pulp
+
+from utils import OptimizationError
 
 
 def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
@@ -8,7 +11,7 @@ def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_
     """
     添加目标函数，其中包含了对爆仓量，货物平均，以及权重的考虑。
     """
-    # Create a dictionary to hold the deviation variables for the sum of absolute deviations objective
+    # 绝对偏差
     deviations = LpVariable.dicts("Deviation",
                                   ((i, k) for i in range(n_warehouses) for k in range(m_goods)),
                                   lowBound=0)
@@ -35,7 +38,7 @@ def add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_
     priority_cost = lpSum([transfer_vars[(i, j, k)] * priority_weights[j]
                            for i in range(n_warehouses) for j in range(n_warehouses)
                            for k in range(m_goods) if i != j])
-    # Calculate excess stock for each warehouse
+    # 计算每个仓库的库存超额量
     excess_stock = {
         i: lpSum(current_stock[i, k] + lpSum(
             [transfer_vars[(j, i, k)] - transfer_vars[(i, j, k)] for j in range(n_warehouses)])
@@ -125,11 +128,11 @@ def extract_solution(n_warehouses, m_goods, transfer_vars, current_stock, max_st
     """
     从求解器结果中解析移库量
     """
-    actions = []  # to collect feasible actions
-    for i in range(n_warehouses):  # Source warehouse
-        for j in range(n_warehouses):  # Destination warehouse
+    actions = []
+    for i in range(n_warehouses):
+        for j in range(n_warehouses):
             if i != j:
-                for k in range(m_goods):  # For each good
+                for k in range(m_goods):
                     transfer_amount = transfer_vars[(i, j, k)].varValue
                     transfer_amount = round(transfer_amount, 2)
                     if transfer_amount > 1e-5:
@@ -145,28 +148,39 @@ def extract_solution(n_warehouses, m_goods, transfer_vars, current_stock, max_st
 def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
                                            df_special_rules_index, priority_weights):
     # %%
+    try:
+        prob = LpProblem("Stock_Distribution_With_Priority_And_Rules", LpMinimize)
+        n_warehouses, m_goods = current_stock.shape
+        # 移库动作变量
+        transfer_vars = LpVariable.dicts("Transfer",
+                                         ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
+                                          range(m_goods)),
+                                         lowBound=0, cat='Continuous')
+        # 松弛变量
+        slack = LpVariable.dicts("slack", ((i, k) for i in range(n_warehouses) for k in range(m_goods)), lowBound=0)
 
-    prob = LpProblem("Stock_Distribution_With_Priority_And_Rules", LpMinimize)
-    n_warehouses, m_goods = current_stock.shape
-    # 移库动作变量
-    transfer_vars = LpVariable.dicts("Transfer",
-                                     ((i, j, k) for i in range(n_warehouses) for j in range(n_warehouses) for k in
-                                      range(m_goods)),
-                                     lowBound=0, cat='Continuous')
-    # 松弛变量
-    slack = LpVariable.dicts("slack", ((i, k) for i in range(n_warehouses) for k in range(m_goods)), lowBound=0)
+        add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
+                                    priority_weights, slack)
+        add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
+                        n_warehouses, m_goods, transfer_vars, slack)
+        add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
 
-    add_objective_with_priority(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars,
-                                priority_weights, slack)
-    add_constraints(prob, current_stock, max_stock_per_warehouse, min_safety_stock, max_safety_stock,
-                    n_warehouses, m_goods, transfer_vars, slack)
-    add_special_rules(prob, df_special_rules_index, n_warehouses, transfer_vars)
+        prob.solve(solver=PULP_CBC_CMD(msg=False))
+        print("-" * 8, "pulp result", "-" * 8, )
+        print("Status:", LpStatus[prob.status])
+        print("Objective =", value(prob.objective))
+        print("-" * 6, "result end here", "-" * 6, )
 
-    prob.solve()
-    actions = extract_solution(n_warehouses, m_goods, transfer_vars, current_stock,
-                               max_stock_per_warehouse)
-    status = prob.status
-    return actions, status
+        actions = extract_solution(n_warehouses, m_goods, transfer_vars, current_stock,
+                                   max_stock_per_warehouse)
+        status = prob.status
+        return actions, status
+    except Exception as e:
+        # 捕获优化过程中的任何异常，并抛出自定义的 OptimizationError
+        raise OptimizationError(f"Optimization process encountered an error: {e}")
+
+
+
 
 
 # %%

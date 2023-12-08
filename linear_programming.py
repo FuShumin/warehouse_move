@@ -4,8 +4,7 @@ import numpy as np
 
 def add_objective_function(prob, current_stock, max_stock_per_warehouse, n_warehouses, m_goods, transfer_vars):
     """
-    Add the objective function to the linear programming problem.
-    Objective is to minimize the standard deviation of stock percentage levels across different warehouses for each good.
+    以货物均衡度为优化目标，爆仓为约束的线性规划算法。
     """
     for k in range(m_goods):
         stock_percentage_levels = [
@@ -94,10 +93,11 @@ def extract_solution(prob, n_warehouses, m_goods, transfer_vars, current_stock):
     return actions
 
 
-def check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods):
+def check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock):
     """
     Check for potential issues that might make the problem infeasible or cause errors.
     """
+    n_warehouses, m_goods = current_stock.shape
     errors = []
 
     # Check if minimum safety stock exceeds maximum warehouse capacity
@@ -118,7 +118,6 @@ def check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock, n
     # Check if the number of warehouses or goods is zero
     if n_warehouses == 0 or m_goods == 0:
         errors.append("Number of warehouses or goods cannot be zero.")
-    # TODO: Add more error checks as needed
 
     return errors
 
@@ -131,7 +130,7 @@ def optimize_stock_distribution_percentage(current_stock, max_stock_per_warehous
     n_warehouses, m_goods = current_stock.shape
 
     # Check for potential errors
-    errors = check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock, n_warehouses, m_goods)
+    errors = check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock)
     if errors:
         return f"Errors found: {errors}"
 
