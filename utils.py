@@ -158,7 +158,7 @@ def check_for_errors(current_stock, max_stock_per_warehouse, min_safety_stock, m
 
     if errors:
         # Join all errors into a single message
-        error_message = "error" + "; ".join(errors)
+        error_message = "; ".join(errors)
         raise DataValidationError(error_message)
     return None
 

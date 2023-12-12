@@ -11,6 +11,7 @@ app.json.ensure_ascii = False
 
 
 def fetch_and_calculate(client_id):
+    print('version 1.0')
     client_id = client_id
     # client_id = 1691005891402997762, 1665993159813017601
     try:
